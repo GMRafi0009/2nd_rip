@@ -2,119 +2,69 @@
 
 set -Eeuo pipefail
 
-readonly SCRIPT_NAME="$(basename "$0")"
+
+# ==============================================================================
+# Load Common Functions
+# ==============================================================================
+
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly COMMON_SCRIPT="${SCRIPT_DIR}/common.sh"
+
+if [[ ! -f "${COMMON_SCRIPT}" ]]; then
+    printf '[ERROR] Common script not found: %s\n' "${COMMON_SCRIPT}" >&2
+    exit 1
+fi
+
+source "${COMMON_SCRIPT}"
+
+
+# ==============================================================================
+# MySQL Configuration
+# ==============================================================================
+
+readonly EXPECTED_RHEL_VERSION="9.7"
+readonly EXPECTED_ARCHITECTURE="x86_64"
+
 readonly MYSQL_REPO_RPM="mysql97-community-release-el9-1.noarch.rpm"
+
 readonly MYSQL_REPO_URL="https://dev.mysql.com/get/${MYSQL_REPO_RPM}"
+
 readonly MYSQL_PACKAGE="mysql-community-server"
 
-log() {
-    printf '[INFO] %s\n' "$*"
-}
-
-error() {
-    printf '[ERROR] %s\n' "$*" >&2
-}
-
-on_error() {
-    local exit_code=$?
-    local line_number=$1
-
-    error "${SCRIPT_NAME} failed at line ${line_number} with exit code ${exit_code}."
-    exit "$exit_code"
-}
-
-trap 'on_error $LINENO' ERR
+readonly MYSQL_SERVICE="mysqld"
 
 
-# ------------------------------------------------------------------------------
-# 1. Validate root access
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Temporary Directory
+# ==============================================================================
 
-if [[ "$(id -u)" -ne 0 ]]; then
-    error "Root access is required to install MySQL."
-    error "Please run this script with root access."
-    error "Example: sudo ${SCRIPT_NAME}"
-    exit 1
-fi
-
-log "Root access validated."
+TMP_DIR=""
 
 
-# ------------------------------------------------------------------------------
-# 2. Validate operating system
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Cleanup
+# ==============================================================================
 
-if [[ ! -r /etc/os-release ]]; then
-    error "/etc/os-release not found."
-    exit 1
-fi
+cleanup() {
 
-source /etc/os-release
-
-if [[ "${ID}" != "rhel" ]]; then
-    error "Unsupported operating system: ${ID}"
-    exit 1
-fi
-
-if [[ "${VERSION_ID}" != "9.7" ]]; then
-    error "Expected RHEL 9.7, found ${VERSION_ID}."
-    exit 1
-fi
-
-log "Operating system validated: ${PRETTY_NAME}"
-
-
-# ------------------------------------------------------------------------------
-# 3. Validate architecture
-# ------------------------------------------------------------------------------
-
-ARCHITECTURE="$(uname -m)"
-
-if [[ "${ARCHITECTURE}" != "x86_64" ]]; then
-    error "Unsupported architecture: ${ARCHITECTURE}"
-    exit 1
-fi
-
-log "Architecture validated: ${ARCHITECTURE}"
-
-
-# ------------------------------------------------------------------------------
-# 4. Validate required commands
-# ------------------------------------------------------------------------------
-
-for command in curl rpm dnf systemctl; do
-    if ! command -v "${command}" >/dev/null 2>&1; then
-        error "Required command not found: ${command}"
-        exit 1
-    fi
-done
-
-log "Required commands validated."
-
-
-# ------------------------------------------------------------------------------
-# 5. Check whether MySQL is already installed
-# ------------------------------------------------------------------------------
-
-if rpm -q "${MYSQL_PACKAGE}" >/dev/null 2>&1; then
-    log "MySQL Community Server is already installed."
-else
-
-    # --------------------------------------------------------------------------
-    # 6. Create temporary directory
-    # --------------------------------------------------------------------------
-
-    readonly TMP_DIR="$(mktemp -d)"
-
-    cleanup() {
+    if [[ -n "${TMP_DIR}" && -d "${TMP_DIR}" ]]; then
         rm -rf "${TMP_DIR}"
-    }
+    fi
+}
 
-    trap cleanup EXIT
 
-    # --------------------------------------------------------------------------
-    # 7. Download official MySQL repository RPM
-    # --------------------------------------------------------------------------
+trap cleanup EXIT
+
+
+# ==============================================================================
+# MySQL Repository Installation
+# ==============================================================================
+
+install_mysql_repository() {
+
+    log "Creating temporary directory."
+
+    TMP_DIR="$(mktemp -d)"
 
     log "Downloading official MySQL repository package."
 
@@ -126,26 +76,26 @@ else
         --output "${TMP_DIR}/${MYSQL_REPO_RPM}" \
         "${MYSQL_REPO_URL}"
 
-    # --------------------------------------------------------------------------
-    # 8. Install MySQL repository
-    # --------------------------------------------------------------------------
-
     log "Installing MySQL repository."
 
     dnf install -y \
         "${TMP_DIR}/${MYSQL_REPO_RPM}"
 
-    # --------------------------------------------------------------------------
-    # 9. Refresh DNF metadata
-    # --------------------------------------------------------------------------
-
     log "Refreshing DNF metadata."
 
     dnf makecache
 
-    # --------------------------------------------------------------------------
-    # 10. Verify MySQL repository
-    # --------------------------------------------------------------------------
+    verify_mysql_repository
+}
+
+
+# ==============================================================================
+# MySQL Repository Verification
+# ==============================================================================
+
+verify_mysql_repository() {
+
+    log "Verifying MySQL repository."
 
     if ! dnf repolist enabled | grep -qi 'mysql'; then
         error "MySQL repository is not enabled."
@@ -153,96 +103,180 @@ else
     fi
 
     log "MySQL repository verified."
+}
 
-    # --------------------------------------------------------------------------
-    # 11. Install MySQL
-    # --------------------------------------------------------------------------
+
+# ==============================================================================
+# MySQL Package Installation
+# ==============================================================================
+
+install_mysql_package() {
 
     log "Installing MySQL Community Server."
 
     if ! dnf install -y "${MYSQL_PACKAGE}"; then
+
         error "MySQL installation failed."
         error "Check the DNF output above for the installation error."
+
         exit 1
     fi
 
     log "MySQL package installation completed."
-
-fi
-
-
-# ------------------------------------------------------------------------------
-# 12. Verify MySQL package installation
-# ------------------------------------------------------------------------------
-
-if rpm -q "${MYSQL_PACKAGE}" >/dev/null 2>&1; then
-    log "MySQL package installation verified."
-else
-    error "MySQL package verification failed."
-    error "Package '${MYSQL_PACKAGE}' is not installed."
-    exit 1
-fi
+}
 
 
-# ------------------------------------------------------------------------------
-# 13. Enable MySQL service
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# MySQL Package Verification
+# ==============================================================================
 
-log "Enabling MySQL service."
+verify_mysql_package() {
 
-if ! systemctl enable mysqld; then
-    error "Failed to enable mysqld service."
-    exit 1
-fi
+    log "Verifying MySQL package."
 
+    if is_package_installed "${MYSQL_PACKAGE}"; then
 
-# ------------------------------------------------------------------------------
-# 14. Start MySQL service
-# ------------------------------------------------------------------------------
+        log "MySQL package installation verified."
 
-log "Starting MySQL service."
+    else
 
-if ! systemctl start mysqld; then
-    error "Failed to start mysqld service."
+        error "MySQL package verification failed."
+        error "Package '${MYSQL_PACKAGE}' is not installed."
 
-    systemctl status mysqld --no-pager >&2
-
-    exit 1
-fi
+        exit 1
+    fi
+}
 
 
-# ------------------------------------------------------------------------------
-# 15. Verify MySQL service
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# MySQL Version
+# ==============================================================================
 
-if systemctl is-active --quiet mysqld; then
-    log "MySQL service is active."
-else
-    error "MySQL service is not active."
-    error "Displaying mysqld service status:"
+display_mysql_version() {
 
-    systemctl status mysqld --no-pager >&2
+    local mysql_version
 
-    exit 1
-fi
+    mysql_version="$(mysqld --version)"
+
+    log "Installed MySQL: ${mysql_version}"
+}
 
 
-# ------------------------------------------------------------------------------
-# 16. Display installed MySQL version
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Main Function
+# ==============================================================================
 
-MYSQL_VERSION="$(mysqld --version)"
+main() {
 
-log "Installed MySQL: ${MYSQL_VERSION}"
+    log "=================================================="
+    log "Starting MySQL installation."
+    log "=================================================="
 
 
-# ------------------------------------------------------------------------------
-# 17. Final result
-# ------------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
+    # 1. Validate root
+    # --------------------------------------------------------------------------
 
-log "=================================================="
-log "MySQL installation completed successfully."
-log "MySQL service: ACTIVE"
-log "=================================================="
+    validate_root
+
+
+    # --------------------------------------------------------------------------
+    # 2. Validate operating system
+    # --------------------------------------------------------------------------
+
+    validate_rhel "${EXPECTED_RHEL_VERSION}"
+
+
+    # --------------------------------------------------------------------------
+    # 3. Validate architecture
+    # --------------------------------------------------------------------------
+
+    validate_architecture "${EXPECTED_ARCHITECTURE}"
+
+
+    # --------------------------------------------------------------------------
+    # 4. Validate required commands
+    # --------------------------------------------------------------------------
+
+    validate_commands curl rpm dnf systemctl
+
+
+    # --------------------------------------------------------------------------
+    # 5. Check whether MySQL is already installed
+    # --------------------------------------------------------------------------
+
+    if is_package_installed "${MYSQL_PACKAGE}"; then
+
+        log "MySQL Community Server is already installed."
+
+    else
+
+        # ----------------------------------------------------------------------
+        # 6. Install MySQL repository
+        # ----------------------------------------------------------------------
+
+        install_mysql_repository
+
+
+        # ----------------------------------------------------------------------
+        # 7. Install MySQL package
+        # ----------------------------------------------------------------------
+
+        install_mysql_package
+
+    fi
+
+
+    # --------------------------------------------------------------------------
+    # 8. Verify MySQL package
+    # --------------------------------------------------------------------------
+
+    verify_mysql_package
+
+
+    # --------------------------------------------------------------------------
+    # 9. Enable MySQL service
+    # --------------------------------------------------------------------------
+
+    enable_service "${MYSQL_SERVICE}"
+
+
+    # --------------------------------------------------------------------------
+    # 10. Start MySQL service
+    # --------------------------------------------------------------------------
+
+    start_service "${MYSQL_SERVICE}"
+
+
+    # --------------------------------------------------------------------------
+    # 11. Verify MySQL service
+    # --------------------------------------------------------------------------
+
+    verify_service_active "${MYSQL_SERVICE}"
+
+
+    # --------------------------------------------------------------------------
+    # 12. Display MySQL version
+    # --------------------------------------------------------------------------
+
+    display_mysql_version
+
+
+    # --------------------------------------------------------------------------
+    # 13. Final result
+    # --------------------------------------------------------------------------
+
+    log "=================================================="
+    log "MySQL installation completed successfully."
+    log "MySQL service: ACTIVE"
+    log "=================================================="
+}
+
+
+# ==============================================================================
+# Script Entry Point
+# ==============================================================================
+
+main "$@"
 
 exit 0
