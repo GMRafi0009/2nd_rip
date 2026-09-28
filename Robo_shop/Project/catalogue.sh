@@ -42,7 +42,7 @@ dnf install nodejs -y
 
 VALIDATE $? "installing nodejs:18" &>> $LOGFILE
 
-id roboshdp
+id roboshop
 if [ $? -ne 0 ]
 then
 	useradd roboshop
