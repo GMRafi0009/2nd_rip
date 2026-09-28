@@ -62,7 +62,7 @@ npm install
 
 VALIDATE $? "installing application dependences" &>> $LOGFILE
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/catalogue.service /etc/systemd/system/catalogue.servicel
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/catalogue.service /etc/systemd/system/catalogue.service
 
 VALIDATE $? "Copying catalogue service file" &>> $LOGFILE
 
