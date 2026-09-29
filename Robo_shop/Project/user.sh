@@ -55,12 +55,13 @@ mkdir -p /app
 
 VALIDATE $? "creating app directory" &>> $LOGFILE
 
-curl -o /tmp/catalogue.zip https://roboshop-builds.s3.amazonaws.com/catalogue.zip
+curl -L -o /tmp/user.zip https://roboshop-builds.s3.amazonaws.com/user.zip
 
-VALIDATE $? "downloding the catalogue application" &>> $LOGFILE
+VALIDATE $? "downloding the user application" &>> $LOGFILE
 
 cd /app
-unzip /tmp/catalogue.zip
+
+unzip /tmp/user.zip
 
 VALIDATE $? "unziping application files" &>> $LOGFILE
 
@@ -68,21 +69,21 @@ npm install
 
 VALIDATE $? "installing application dependences" &>> $LOGFILE
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/catalogue.service /etc/systemd/system/catalogue.service
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/user.service /etc/systemd/system/user.service
 
-VALIDATE $? "Copying catalogue service file" &>> $LOGFILE
+VALIDATE $? "Copying user service file" &>> $LOGFILE
 
 systemctl daemon-reload
 
-VALIDATE $? "catalogue daemon reload" &>> $LOGFILE
+VALIDATE $? "user daemon reload" &>> $LOGFILE
 
-systemctl enable catalogue &>> $LOGFILE
+systemctl enable user &>> $LOGFILE
 
-VALIDATE $? "Enable catalogue"
+VALIDATE $? "Enable user"
 
-systemctl start catalogue &>> $LOGFILE
+systemctl start user &>> $LOGFILE
 
-VALIDATE $? "Starting catalogue"
+VALIDATE $? "Starting user"
 
 cp /home/ec2-user/2nd_rip/Robo_shop/Project/mongo.repo /etc/yum.repos.d/mongo.repo
 
@@ -92,6 +93,6 @@ dnf install mongodb-mongosh -y &>> $LOGFILE
 
 VALIDATE $? "Installing MongoDB client"
 
-mongo -- host $mongodb_host </app/schema/catalogue.js &>> $LOGFILE
+mongo -- host $mongodb_host </app/schema/user.js &>> $LOGFILE
 
-VALIDATE $? "loding catalogue data into mongodb"
+VALIDATE $? "loding user data into mongodb"
