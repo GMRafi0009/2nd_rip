@@ -70,7 +70,7 @@ systemctl daemon-reload &>> $LOGFILE
 
 VALIDATE $? "doing daemon-reload"
 
-systemct1 enable shipping &>> $LOGFILE
+systemct enable shipping &>> $LOGFILE
 
 VALIDATE $? "enabling shipping"
 
