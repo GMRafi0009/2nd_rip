@@ -30,6 +30,8 @@ fi # fi means reverse of if, indicating condition end
 
 dnf install https://dev.mysql.com/get/mysql84-community-release-el9-4.noarch.rpm -y &>> $LOGFILE
 
+dnf install mysql-community-server -y
+
 VALIDATE $? "Disable current MySQL version"
 
 cp mysql.repo /etc/yum.repos.d/mysql.repo &>> $LOGFILE
