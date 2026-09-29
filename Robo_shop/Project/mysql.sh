@@ -28,7 +28,7 @@ else
 	echo "You are root user"
 fi # fi means reverse of if, indicating condition end
 
-dnf module disable mysql -y &>> $LOGFILE
+dnf install https://dev.mysql.com/get/mysql84-community-release-el9-4.noarch.rpm -y &>> $LOGFILE
 
 VALIDATE $? "Disable current MySQL version"
 
