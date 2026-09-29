@@ -50,7 +50,7 @@ curl -o /tmp/web.zip https://roboshop-builds.s3.amazonaws.com/web.zip &>> $LOGFI
 
 VALIDATE $? "downloding nginx zip files"
 
-cd /usr/share/nginx/html 
+cd /usr/share/nginx/html &>> $LOGFILE
 
 VALIDATE $? "moving to nginx dir"
 
@@ -58,11 +58,11 @@ unzip -o /tmp/web.zip &>> $LOGFILE
 
 VALIDATE $? "unziping nginx files"
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/roboshop.conf /etc/nginx/default.d/roboshop.conf 
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/roboshop.conf /etc/nginx/default.d/roboshop.conf &>> $LOGFILE
 
 VALIDATE $? "copied roboshop reverse proxy config"
 
-systemctl restart nginx
+systemctl restart nginx &>> $LOGFILE
 
 VALIDATE $? "restarted nginx"
 
