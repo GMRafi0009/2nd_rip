@@ -37,7 +37,7 @@ VALIDATE $? "downloding erling script"
 
 curl -s https://packagecloud.io/install/repositories/rabbitmq/rabbitmq-server/script.rpm.sh | bash &>> $LOGFILE
 
-VALIDATE $? "Downloading rabbitmq script
+VALIDATE $? "Downloading rabbitmq script"
 
 dnf install rabbitmq-server -y &>> $LOGFILE
 
@@ -55,6 +55,6 @@ rabbitmqctl add_user roboshop roboshop123 &>> $LOGFILE
 
 VALIDATE $? "creating user"
 
-rabbitmqctl set_permissions -p / roboshop " .* " " .* " " .*
+rabbitmqctl set_permissions -p / roboshop ".*" ".*" ".*"
 
 VALIDATE $? "setting permission"
