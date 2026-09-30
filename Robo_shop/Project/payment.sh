@@ -30,7 +30,7 @@ else
 	echo "You are root user"
 fi # fi means reverse of if, indicating condition end
 
-dnf install python36 gcc python3-devel -y
+dnf install python3 python3-pip python3-devel gcc -y
 
 id roboshop #if roboshop user does not exist, then it is failure
 
@@ -57,11 +57,11 @@ unzip /tmp/payment.zip &>> $LOGFILE
 
 VALIDATE $? "unziping the payment files"
 
-pip3.6 install -r requirements.txt &>> $LOGFILE
+pip3 install -r requirements.txt &>> $LOGFILE
 
 VALIDATE $? "installind dependancyes"
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/payment.service /etc/systemd/system/payment.servicet  &>> $LOGFILE
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/payment.service /etc/systemd/system/payment.service  &>> $LOGFILE
 
 VALIDATE $? "Copying payment service"
 
