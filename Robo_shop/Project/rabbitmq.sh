@@ -58,5 +58,3 @@ VALIDATE $? "creating user"
 rabbitmqctl set_permissions -p / roboshop " .* " " .* " " .*
 
 VALIDATE $? "setting permission"
-
-I
