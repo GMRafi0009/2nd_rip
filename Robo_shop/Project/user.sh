@@ -38,9 +38,9 @@ dnf module enable nodejs:18 -y
 
 VALIDATE $? "enabling nodejs:18" &>> $LOGFILE
 
-dnf install nodejs -y
+dnf module disable nodejs -y &>> "$LOGFILE"
 
-VALIDATE $? "installing nodejs:18" &>> $LOGFILE
+VALIDATE $? "Disabling current NodeJS"
 
 id roboshop
 if [ $? -ne 0 ]
@@ -60,6 +60,8 @@ curl -L -o /tmp/user.zip https://roboshop-builds.s3.amazonaws.com/user.zip
 VALIDATE $? "downloding the user application" &>> $LOGFILE
 
 cd /app
+
+VALIDATE $? "Changing to /app"
 
 unzip /tmp/user.zip
 
