@@ -30,7 +30,9 @@ else
 	echo "You are root user"
 fi # fi means reverse of if, indicating condition end
 
-dnf install python3 python3-pip python3-devel gcc -y
+dnf install python3 python3-pip python3-devel gcc -y &>> $LOGFILE
+
+VALIDATE $? "Installing Python dependencies"
 
 id roboshop #if roboshop user does not exist, then it is failure
 
@@ -53,7 +55,7 @@ VALIDATE $? "Downloading payment"
 
 cd /app &>> $LOGFILE
 
-unzip /tmp/payment.zip &>> $LOGFILE
+unzip -o /tmp/payment.zip &>> $LOGFILE
 
 VALIDATE $? "unziping the payment files"
 
