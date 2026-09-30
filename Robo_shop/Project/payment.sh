@@ -30,7 +30,7 @@ else
 	echo "You are root user"
 fi # fi means reverse of if, indicating condition end
 
-dnf install python36 gcc python3-devel –y
+dnf install python36 gcc python3-devel -y
 
 id roboshop #if roboshop user does not exist, then it is failure
 
