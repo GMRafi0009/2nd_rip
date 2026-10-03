@@ -1,0 +1,19 @@
+[Unit]
+Description=Cart Service
+After=network.target
+
+[Service]
+User=roboshop
+WorkingDirectory=/app
+
+Environment=REDIS_HOST=redis.3gb.online
+Environment=CATALOGUE_HOST=catalogue.3gb.online
+Environment=CATALOGUE_PORT=8080
+
+ExecStart=/bin/node /app/server.js
+
+SyslogIdentifier=cart
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

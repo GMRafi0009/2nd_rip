@@ -1,0 +1,18 @@
+[Unit]
+Description=Catalogue Service
+After=network.target
+
+[Service]
+User=roboshop
+WorkingDirectory=/app
+
+Environment=MONGO=true
+Environment=MONGO_URL=mongodb://mongodb.3gb.online:27017/catalogue
+
+ExecStart=/bin/node /app/server.js
+
+SyslogIdentifier=catalogue
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Shipping Service
+After=network.target
+
+[Service]
+User=roboshop
+WorkingDirectory=/app
+
+Environment=CART_ENDPOINT=cart.3gb.online:8080
+Environment=DB_HOST=mysql.3gb.online
+
+ExecStart=/usr/bin/java -jar /app/shipping.jar
+
+SyslogIdentifier=shipping
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

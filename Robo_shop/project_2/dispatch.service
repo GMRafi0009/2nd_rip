@@ -1,0 +1,19 @@
+[Unit]
+Description=Dispatch Service
+After=network.target
+
+[Service]
+User=roboshop
+WorkingDirectory=/app
+
+Environment=AMQP_HOST=rabbitmq.3gb.online
+Environment=AMQP_USER=roboshop
+Environment=AMQP_PASS=roboshop123
+
+ExecStart=/app/dispatch
+
+SyslogIdentifier=dispatch
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
