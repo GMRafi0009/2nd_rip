@@ -1,91 +1,225 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 ID=$(id -u)
+
 R="\e[31m"
 G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
 TIMESTAMP=$(date +%F-%H-%M-%S)
-LOGFILE="/tmp/$0-$TIMESTAMP.log"
+LOGFILE="/tmp/shipping-$TIMESTAMP.log"
 
-echo "script stareted executing at $TIMESTAMP" &>> $LOGFILE
+echo "Shipping script started executing at $TIMESTAMP" &>> "$LOGFILE"
 
-VALIDATE(){
-	if [ $1 -ne 0 ]
-	then
-		echo -e "$2 ... $R FAILED $N"
-		exit 1
-	else
-		echo -e "$2 ... $G SUCCESS $N"
-	fi
+VALIDATE() {
+    local STATUS="$1"
+    local MESSAGE="$2"
+
+    if [ "$STATUS" -ne 0 ]; then
+        echo -e "$MESSAGE ... $R FAILED $N"
+        echo "Check log file: $LOGFILE"
+        exit 1
+    else
+        echo -e "$MESSAGE ... $G SUCCESS $N"
+    fi
 }
-if [ $ID -ne 0 ]
-then
-	echo -e "$R ERROR :: Please run.this script with root access $N"
-	exit 1.# you.can give other.than 0
+
+# --------------------------------------------------
+# Root validation
+# --------------------------------------------------
+
+if [ "$ID" -ne 0 ]; then
+    echo -e "$R ERROR :: Please run this script with root access $N"
+    exit 1
 else
-	echo "You are root user"
-fi # fi means reverse of if, indicating condition end
+    echo -e "$G You are root user $N"
+fi
 
-dnf install maven -y
+# --------------------------------------------------
+# Install Maven
+# --------------------------------------------------
 
-id roboshop #if roboshop user does not exist, then it is failure
-if [ $? -ne 0 ]
-then
-	useradd roboshop
-	VALIDATE $? "roboshop user creation"
+dnf install maven -y &>> "$LOGFILE"
+VALIDATE $? "Installing Maven"
+
+# --------------------------------------------------
+# Create roboshop user
+# --------------------------------------------------
+
+if id roboshop &>> "$LOGFILE"; then
+    echo -e "roboshop user already exists $Y SKIPPING $N"
 else
-echo -e "roboshop user already exist $Y SKIPPING $N"
+    useradd roboshop &>> "$LOGFILE"
+    VALIDATE $? "Creating roboshop user"
+fi
 
-fi 
+# --------------------------------------------------
+# Create application directory
+# --------------------------------------------------
 
 mkdir -p /app
+VALIDATE $? "Creating /app directory"
 
-VALIDATE $? "creating app directory"
+# --------------------------------------------------
+# Download Shipping application
+# --------------------------------------------------
 
-curl -L -o /tmp/shipping.zip https://roboshop-builds.s3.amazonaws.com/shipping.zip &>> $LOGFILE
+curl -fL -o /tmp/shipping.zip \
+    https://roboshop-builds.s3.amazonaws.com/shipping.zip \
+    &>> "$LOGFILE"
 
-VALIDATE $? "downloding application zip files"
+VALIDATE $? "Downloading Shipping application"
+
+# --------------------------------------------------
+# Extract application
+# --------------------------------------------------
 
 cd /app
 
-unzip -o /tmp/shipping.zip &>> $LOGFILE
+unzip -o /tmp/shipping.zip &>> "$LOGFILE"
+VALIDATE $? "Extracting Shipping application"
 
-VALIDATE $? "unziping the application files"
+# --------------------------------------------------
+# Build application
+# --------------------------------------------------
 
-mvn clean package &>> $LOGFILE
+mvn clean package &>> "$LOGFILE"
+VALIDATE $? "Building Shipping application"
 
-VALIDATE $? "installing application dependences"
+# --------------------------------------------------
+# Rename JAR
+# --------------------------------------------------
 
-mv target/shipping-1.0.jar shipping.jar &>> $LOGFILE
+mv target/shipping-1.0.jar shipping.jar &>> "$LOGFILE"
+VALIDATE $? "Creating shipping.jar"
 
-VALIDATE $? "renaming the jar files"
+# --------------------------------------------------
+# Install MySQL client BEFORE database initialization
+# --------------------------------------------------
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/shipping.service /etc/systemd/system/shipping.service &>> $LOGFILE
+dnf install mysql -y &>> "$LOGFILE"
+VALIDATE $? "Installing MySQL client"
 
-VALIDATE $? "copying application files"
+# --------------------------------------------------
+# Verify MySQL connectivity
+# --------------------------------------------------
 
-systemctl daemon-reload &>> $LOGFILE
+mysql \
+    -h mysql.3gb.online \
+    -uroot \
+    -p'RoboShop@1' \
+    -e "SELECT 1;" \
+    &>> "$LOGFILE"
 
-VALIDATE $? "doing daemon-reload"
+VALIDATE $? "Checking MySQL connectivity"
 
-systemctl enable shipping &>> $LOGFILE
+# --------------------------------------------------
+# Load Shipping database schema/data
+# --------------------------------------------------
 
-VALIDATE $? "enabling shipping"
+if [ ! -f /app/db/schema.sql ]; then
+    echo -e "$R ERROR :: /app/db/schema.sql not found $N"
+    exit 1
+fi
 
-systemctl start shipping &>> $LOGFILE
+mysql \
+    -h mysql.3gb.online \
+    -uroot \
+    -p'RoboShop@1' \
+    < /app/db/schema.sql \
+    &>> "$LOGFILE"
 
-VALIDATE $? "starting shipping"
+VALIDATE $? "Loading Shipping database schema/data"
 
-dnf install mysql -y &>> $LOGFILE
+# --------------------------------------------------
+# Verify Shipping database
+# --------------------------------------------------
 
-VALIDATE $? "installing mysql client"
+mysql \
+    -h mysql.3gb.online \
+    -uroot \
+    -p'RoboShop@1' \
+    -e "SHOW DATABASES;" \
+    &>> "$LOGFILE"
 
-mysql -h mysql.3gb.online -uroot -pRoboShop@1 < /app/db/schema.sql &>> $LOGFILE
+VALIDATE $? "Verifying Shipping database"
 
-VALIDATE $? "loading shipping data"
+# --------------------------------------------------
+# Copy systemd service
+# --------------------------------------------------
 
-systemctl restart shipping &>> $LOGFILE
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/shipping.service \
+    /etc/systemd/system/shipping.service \
+    &>> "$LOGFILE"
 
-VALIDATE $? "restart shipping"
+VALIDATE $? "Copying Shipping systemd service"
+
+# --------------------------------------------------
+# Reload systemd
+# --------------------------------------------------
+
+systemctl daemon-reload &>> "$LOGFILE"
+VALIDATE $? "Reloading systemd"
+
+# --------------------------------------------------
+# Enable Shipping
+# --------------------------------------------------
+
+systemctl enable shipping &>> "$LOGFILE"
+VALIDATE $? "Enabling Shipping service"
+
+# --------------------------------------------------
+# Start Shipping
+# --------------------------------------------------
+
+systemctl start shipping &>> "$LOGFILE"
+VALIDATE $? "Starting Shipping service"
+
+# --------------------------------------------------
+# Verify Shipping service
+# --------------------------------------------------
+
+sleep 5
+
+if systemctl is-active --quiet shipping; then
+    echo -e "Shipping service ... $G ACTIVE $N"
+else
+    echo -e "$R ERROR :: Shipping service is not active $N"
+    journalctl -u shipping -n 50 --no-pager
+    exit 1
+fi
+
+# --------------------------------------------------
+# Verify Shipping API
+#
+# Change 8080 if shipping.service uses another port.
+# --------------------------------------------------
+
+SHIPPING_PORT=8080
+
+if curl -fsS \
+    "http://localhost:${SHIPPING_PORT}/api/shipping/codes" \
+    &>> "$LOGFILE"; then
+
+    echo -e "Shipping /api/shipping/codes ... $G SUCCESS $N"
+
+else
+
+    echo -e "$R ERROR :: /api/shipping/codes is not responding successfully $N"
+    echo
+    echo "Recent Shipping logs:"
+    journalctl -u shipping -n 50 --no-pager
+    echo
+    echo "Full log: $LOGFILE"
+    exit 1
+
+fi
+
+echo
+echo -e "$G ============================================== $N"
+echo -e "$G Shipping deployment completed successfully $N"
+echo -e "$G Log file: $LOGFILE $N"
+echo -e "$G ============================================== $N"
