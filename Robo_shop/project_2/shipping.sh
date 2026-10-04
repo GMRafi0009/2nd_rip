@@ -1,61 +1,91 @@
-# --------------------------------------------------
-# Copy systemd service
-# --------------------------------------------------
+#!/bin/bash
 
-cp \
-    /home/ec2-user/2nd_rip/Robo_shop/project_2/shipping.service \
-    /etc/systemd/system/shipping.service \
-    &>> "$LOGFILE"
+ID=$(id -u)
+R="\e[31m"
+G="\e[32m"
+Y="\e[33m"
+N="\e[0m"
 
-VALIDATE $? "Copying Shipping systemd service"
+TIMESTAMP=$(date +%F-%H-%M-%S)
+LOGFILE="/tmp/$0-$TIMESTAMP.log"
 
-# --------------------------------------------------
-# Reload systemd
-# --------------------------------------------------
+echo "script stareted executing at $TIMESTAMP" &>> $LOGFILE
 
-systemctl daemon-reload &>> "$LOGFILE"
-VALIDATE $? "Reloading systemd"
-
-# --------------------------------------------------
-# Enable Shipping
-# --------------------------------------------------
-
-systemctl enable shipping &>> "$LOGFILE"
-VALIDATE $? "Enabling Shipping service"
-
-# --------------------------------------------------
-# Start Shipping
-# --------------------------------------------------
-
-systemctl restart shipping &>> "$LOGFILE"
-
-sleep 10
-
-if systemctl is-active --quiet shipping; then
-    echo -e "Shipping service ... $G ACTIVE $N"
+VALIDATE(){
+	if [ $1 -ne 0 ]
+	then
+		echo -e "$2 ... $R FAILED $N"
+		exit 1
+	else
+		echo -e "$2 ... $G SUCCESS $N"
+	fi
+}
+if [ $ID -ne 0 ]
+then
+	echo -e "$R ERROR :: Please run.this script with root access $N"
+	exit 1.# you.can give other.than 0
 else
-    echo -e "$R ERROR :: Shipping service failed to start $N"
-    journalctl -u shipping -n 100 --no-pager
-    exit 1
-fi
+	echo "You are root user"
+fi # fi means reverse of if, indicating condition end
 
-# --------------------------------------------------
-# Verify port
-# --------------------------------------------------
+dnf install maven -y
 
-if ss -lnt | grep -q ':8080 '; then
-    echo -e "Shipping port 8080 ... $G LISTENING $N"
+id roboshop #if roboshop user does not exist, then it is failure
+if [ $? -ne 0 ]
+then
+	useradd roboshop
+	VALIDATE $? "roboshop user creation"
 else
-    echo -e "$R ERROR :: Shipping is not listening on port 8080 $N"
-    journalctl -u shipping -n 100 --no-pager
-    exit 1
-fi
+echo -e "roboshop user already exist $Y SKIPPING $N"
 
-# --------------------------------------------------
-# Verify API
-# --------------------------------------------------
+fi 
 
-curl -fsS http://localhost:8080/api/shipping/codes \
-    &>> "$LOGFILE"
+mkdir -p /app
 
-VALIDATE $? "Checking Shipping country codes API"
+VALIDATE $? "creating app directory"
+
+curl -L -o /tmp/shipping.zip https://roboshop-builds.s3.amazonaws.com/shipping.zip &>> $LOGFILE
+
+VALIDATE $? "downloding application zip files"
+
+cd /app
+
+unzip -o /tmp/shipping.zip &>> $LOGFILE
+
+VALIDATE $? "unziping the application files"
+
+mvn clean package &>> $LOGFILE
+
+VALIDATE $? "installing application dependences"
+
+mv target/shipping-1.0.jar shipping.jar &>> $LOGFILE
+
+VALIDATE $? "renaming the jar files"
+
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/shipping.service /etc/systemd/system/shipping.service &>> $LOGFILE
+
+VALIDATE $? "copying application files"
+
+systemctl daemon-reload &>> $LOGFILE
+
+VALIDATE $? "doing daemon-reload"
+
+systemctl enable shipping &>> $LOGFILE
+
+VALIDATE $? "enabling shipping"
+
+systemctl start shipping &>> $LOGFILE
+
+VALIDATE $? "starting shipping"
+
+dnf install mysql -y &>> $LOGFILE
+
+VALIDATE $? "installing mysql client"
+
+mysql -h mysql.3gb.online -uroot -pRoboShop@1 < /app/db/schema.sql &>> $LOGFILE
+
+VALIDATE $? "loading shipping data"
+
+systemctl restart shipping &>> $LOGFILE
+
+VALIDATE $? "restart shipping"

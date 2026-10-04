@@ -1,19 +1,12 @@
 [Unit]
 Description=Shipping Service
-After=network.target
 
 [Service]
 User=roboshop
-WorkingDirectory=/app
-
-Environment="SPRING_DATASOURCE_URL=jdbc:mysql://mysql.3gb.online:3306/shipping?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
-Environment="SPRING_DATASOURCE_USERNAME=root"
-Environment="SPRING_DATASOURCE_PASSWORD=RoboShop@1"
-
+Environment=CART_ENDPOINT=cart.3gb.online:8080
+Environment=DB_HOST=mysql.3gb.online
 ExecStart=/bin/java -jar /app/shipping.jar
-
-Restart=on-failure
-RestartSec=5
+SyslogIdentifier=shipping
 
 [Install]
 WantedBy=multi-user.target
