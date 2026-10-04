@@ -1,105 +1,80 @@
 #!/bin/bash
 
-set -Eeuo pipefail
-
 ID=$(id -u)
-
 R="\e[31m"
 G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
-SCRIPT_NAME=$(basename "$0")
+mongodb_host=mongodb.3gb.online
+
 TIMESTAMP=$(date +%F-%H-%M-%S)
-LOGFILE="/tmp/${SCRIPT_NAME}-${TIMESTAMP}.log"
+LOGFILE="/tmp/$0-$TIMESTAMP.log"
 
-PAYMENT_SERVICE="payment"
-PAYMENT_DIR="/app"
+echo "script stareted executing at $TIMESTAMP" &>> $LOGFILE
 
-echo "Script started executing at $TIMESTAMP" &>> "$LOGFILE"
-
-VALIDATE() {
-    if [ "$1" -ne 0 ]
-    then
-        echo -e "$2 ... ${R}FAILED${N}"
-        exit 1
-    else
-        echo -e "$2 ... ${G}SUCCESS${N}"
-    fi
+VALIDATE(){
+	if [ $1 -ne 0 ]
+	then
+		echo -e "$2 ... $R FAILED $N"
+		exit 1
+	else
+		echo -e "$2 ... $G SUCCESS $N"
+	fi
 }
-
-if [ "$ID" -ne 0 ]
+if [ $ID -ne 0 ]
 then
-    echo -e "${R}ERROR :: Please run this script with root access${N}"
-    exit 1
+	echo -e "$R ERROR :: Please run.this script with root access $N"
+	exit 1.# you.can give other.than 0
 else
-    echo "You are root user"
-fi
+	echo "You are root user"
+fi # fi means reverse of if, indicating condition end
 
-if ! command -v dnf &>> "$LOGFILE"
-then
-    echo -e "${R}ERROR :: dnf command not found${N}"
-    exit 1
-fi
+dnf install python3 python3-pip python3-devel gcc -y &>> $LOGFILE
 
-dnf install python3 python3-pip python3-devel gcc -y &>> "$LOGFILE"
 VALIDATE $? "Installing Python dependencies"
 
-python3 --version &>> "$LOGFILE"
-VALIDATE $? "Checking Python installation"
+id roboshop #if roboshop user does not exist, then it is failure
 
-pip3 --version &>> "$LOGFILE"
-VALIDATE $? "Checking pip installation"
-
-if id roboshop &>> "$LOGFILE"
+if [ $? -ne 0 ]
 then
-    echo -e "roboshop user already exists ${Y}SKIPPING${N}"
+	useradd roboshop
+	VALIDATE $? "roboshop user creation"
 else
-    useradd roboshop &>> "$LOGFILE"
-    VALIDATE $? "Creating roboshop user"
+	echo -e "roboshop user already exist $Y SKIPPING $N"
 fi
 
-mkdir -p "$PAYMENT_DIR" &>> "$LOGFILE"
-VALIDATE $? "Creating application directory"
+mkdir -p /app &>> $LOGFILE
 
-curl -fL -o /tmp/payment.zip \
-    https://roboshop-builds.s3.amazonaws.com/payment.zip \
-    &>> "$LOGFILE"
-VALIDATE $? "Downloading Payment application"
 
-cd "$PAYMENT_DIR"
-VALIDATE $? "Changing to application directory"
+VALIDATE $? "creating app directory"
 
-unzip -o /tmp/payment.zip &>> "$LOGFILE"
-VALIDATE $? "Unzipping Payment application"
+curl -L -o /tmp/payment.zip https://roboshop-builds.s3.amazonaws.com/payment.zip &>> $LOGFILE
 
-pip3 install -r requirements.txt &>> "$LOGFILE"
-VALIDATE $? "Installing Python application dependencies"
+VALIDATE $? "Downloading payment"
 
-if [ ! -f "$PAYMENT_DIR/payment.ini" ]
-then
-    echo -e "${R}ERROR :: /app/payment.ini not found${N}"
-    exit 1
-fi
+cd /app &>> $LOGFILE
 
-chown -R roboshop:roboshop "$PAYMENT_DIR" &>> "$LOGFILE"
-VALIDATE $? "Setting application ownership"
+unzip -o /tmp/payment.zip &>> $LOGFILE
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/payment.service \
-    /etc/systemd/system/payment.service \
-    &>> "$LOGFILE"
-VALIDATE $? "Copying Payment service file"
+VALIDATE $? "unziping the payment files"
 
-systemctl daemon-reload &>> "$LOGFILE"
-VALIDATE $? "Reloading systemd"
+pip3 install -r requirements.txt &>> $LOGFILE
 
-systemctl enable "$PAYMENT_SERVICE" &>> "$LOGFILE"
-VALIDATE $? "Enabling Payment service"
+VALIDATE $? "installind dependancyes"
 
-systemctl restart "$PAYMENT_SERVICE" &>> "$LOGFILE"
-VALIDATE $? "Starting Payment service"
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/payment.service /etc/systemd/system/payment.service  &>> $LOGFILE
 
-systemctl is-active --quiet "$PAYMENT_SERVICE"
-VALIDATE $? "Checking Payment service health"
+VALIDATE $? "Copying payment service"
 
-echo -e "${G}Payment service setup completed successfully${N}"
+systemctl daemon-reload &>> $LOGFILE
+
+VALIDATE $? "daemon reaload"
+
+systemctl enable payment &>> $LOGFILE
+
+VALIDATE $? "Enable payment"
+
+systemctl start payment &>> $LOGFILE
+
+VALIDATE $? "Start payment"
