@@ -11,7 +11,7 @@ Environment="DB_HOST=mysql.3gb.online"
 
 Environment="SPRING_DATASOURCE_URL=jdbc:mysql://mysql.3gb.online:3306/cities?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
 Environment="SPRING_DATASOURCE_USERNAME=root"
-Environment="SPRING_DATASOURCE_PASSWORD=YOUR_DB_PASSWORD"
+Environment="SPRING_DATASOURCE_PASSWORD=RoboShop@1"
 
 ExecStart=/bin/java -jar /app/shipping.jar
 
