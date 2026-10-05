@@ -1,5 +1,12 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
+# ============================================================
+# RoboShop - Shipping Service Installation
+# LAB ENVIRONMENT ONLY
+# ============================================================
+
 ID=$(id -u)
 
 R="\e[31m"
@@ -7,125 +14,317 @@ G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
-TIMESTAMP=$(date +%F-%H-%M-%S)
 SCRIPT_NAME=$(basename "$0")
+TIMESTAMP=$(date +%F-%H-%M-%S)
 LOGFILE="/tmp/${SCRIPT_NAME}-${TIMESTAMP}.log"
 
-echo "Script started executing at $TIMESTAMP" &>> "$LOGFILE"
+# ------------------------------------------------------------
+# Application configuration
+# ------------------------------------------------------------
+
+APP_DIR="/app"
+ZIP_FILE="/tmp/shipping.zip"
+DOWNLOAD_URL="https://roboshop-builds.s3.amazonaws.com/shipping.zip"
+
+SERVICE_NAME="shipping"
+SERVICE_FILE="/etc/systemd/system/shipping.service"
+
+CART_ENDPOINT="cart.3gb.online:8080"
+
+# ------------------------------------------------------------
+# MySQL configuration
+# LAB ONLY
+# ------------------------------------------------------------
+
+MYSQL_HOST="mysql.3gb.online"
+
+MYSQL_ROOT_USER="root"
+MYSQL_ROOT_PASSWORD="RoboShop@1"
+
+MYSQL_APP_USER="shipping"
+MYSQL_APP_PASSWORD="RoboShop@1"
+
+MYSQL_DATABASE="cities"
+
+# ------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------
+
+echo "Script started at ${TIMESTAMP}" &>> "$LOGFILE"
+
+log() {
+    echo -e "$(date '+%F %T') $*" | tee -a "$LOGFILE"
+}
 
 VALIDATE() {
-    if [ "$1" -ne 0 ]
-    then
-        echo -e "$2 ... $R FAILED $N"
+    if [ "$1" -ne 0 ]; then
+        echo -e "$2 ... ${R}FAILED${N}"
+        echo "Check log file: $LOGFILE"
         exit 1
     else
-        echo -e "$2 ... $G SUCCESS $N"
+        echo -e "$2 ... ${G}SUCCESS${N}"
     fi
 }
 
-# Root validation
-if [ "$ID" -ne 0 ]
-then
-    echo -e "$R ERROR :: Please run this script with root access $N"
+on_error() {
+    local exit_code=$?
+    local line_number=$1
+
+    echo -e "${R}ERROR: Script failed at line ${line_number}${N}" \
+        | tee -a "$LOGFILE"
+
+    echo -e "${R}Check log file: ${LOGFILE}${N}" \
+        | tee -a "$LOGFILE"
+
+    exit "$exit_code"
+}
+
+trap 'on_error $LINENO' ERR
+
+# ============================================================
+# 1. Root validation
+# ============================================================
+
+if [ "$ID" -ne 0 ]; then
+
+    echo -e "${R}ERROR :: Please run this script with root access${N}"
     exit 1
-else
-    echo "You are root user"
+
 fi
 
-# Install Maven
+echo -e "You are ${G}root user${N}"
+
+# ============================================================
+# 2. Install required packages
+# ============================================================
+
 dnf install maven -y &>> "$LOGFILE"
-VALIDATE $? "installing Maven"
+VALIDATE $? "Installing Maven"
 
-# Create roboshop user if not exists
-id roboshop &>> "$LOGFILE"
-
-if [ $? -ne 0 ]
-then
-    useradd roboshop &>> "$LOGFILE"
-    VALIDATE $? "roboshop user creation"
-else
-    echo -e "roboshop user already exists ... $Y SKIPPING $N"
-fi
-
-# Create application directory
-mkdir -p /app
-VALIDATE $? "creating app directory"
-
-# Download Shipping application
-curl -L -o /tmp/shipping.zip \
-    https://roboshop-builds.s3.amazonaws.com/shipping.zip \
-    &>> "$LOGFILE"
-
-VALIDATE $? "downloading Shipping application"
-
-# Extract application
-cd /app
-
-unzip -o /tmp/shipping.zip &>> "$LOGFILE"
-VALIDATE $? "unzipping Shipping application"
-
-# Build application
-mvn clean package &>> "$LOGFILE"
-VALIDATE $? "building Shipping application"
-
-# Rename application JAR
-mv target/shipping-1.0.jar shipping.jar &>> "$LOGFILE"
-VALIDATE $? "renaming Shipping JAR"
-
-# Copy systemd service
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/shipping.service \
-    /etc/systemd/system/shipping.service \
-    &>> "$LOGFILE"
-
-VALIDATE $? "copying Shipping service file"
-
-# Reload systemd
-systemctl daemon-reload &>> "$LOGFILE"
-VALIDATE $? "doing systemd daemon-reload"
-
-# Install MySQL client
 dnf install mysql -y &>> "$LOGFILE"
-VALIDATE $? "installing MySQL client"
+VALIDATE $? "Installing MySQL client"
 
-# Load cities database schema
-mysql -h mysql.3gb.online \
-    -uroot \
-    -p'RoboShop@1' \
-    < /app/db/schema.sql \
-    &>> "$LOGFILE"
+# ============================================================
+# 3. Validate required commands
+# ============================================================
 
-VALIDATE $? "loading cities database schema"
+command -v java &>> "$LOGFILE"
+VALIDATE $? "Checking Java"
 
-# Load cities master data
-mysql -h mysql.3gb.online \
-    -uroot \
-    -p'RoboShop@1' \
-    < /app/db/master-data.sql \
-    &>> "$LOGFILE"
+command -v mvn &>> "$LOGFILE"
+VALIDATE $? "Checking Maven"
 
-VALIDATE $? "loading cities master data"
+command -v mysql &>> "$LOGFILE"
+VALIDATE $? "Checking MySQL client"
 
-# Verify cities data
-CITY_COUNT=$(mysql -h mysql.3gb.online \
-    -uroot \
-    -p'RoboShop@1' \
-    -Nse "SELECT COUNT(*) FROM cities.cities;" \
-    2>> "$LOGFILE")
+command -v curl &>> "$LOGFILE"
+VALIDATE $? "Checking curl"
 
-if [ "$CITY_COUNT" -le 0 ]
-then
-    echo -e "$R ERROR :: Cities master data was not loaded $N"
-    exit 1
+command -v unzip &>> "$LOGFILE"
+VALIDATE $? "Checking unzip"
+
+# ============================================================
+# 4. Create roboshop user
+# ============================================================
+
+if id roboshop &>> "$LOGFILE"; then
+
+    echo -e "roboshop user already exists ${Y}SKIPPING${N}"
+
 else
-    echo -e "$G Cities master data loaded successfully: $CITY_COUNT rows $N"
+
+    useradd roboshop &>> "$LOGFILE"
+    VALIDATE $? "Creating roboshop user"
+
 fi
 
-# Enable Shipping
-systemctl enable shipping &>> "$LOGFILE"
-VALIDATE $? "enabling Shipping"
+# ============================================================
+# 5. Create application directory
+# ============================================================
 
-# Start Shipping
-systemctl start shipping &>> "$LOGFILE"
-VALIDATE $? "starting Shipping"
+mkdir -p "$APP_DIR"
+VALIDATE $? "Creating application directory"
 
-echo -e "$G Shipping setup completed successfully $N"
+# ============================================================
+# 6. Download Shipping application
+# ============================================================
+
+curl -fL \
+    -o "$ZIP_FILE" \
+    "$DOWNLOAD_URL" \
+    &>> "$LOGFILE"
+
+VALIDATE $? "Downloading Shipping application"
+
+# ============================================================
+# 7. Extract Shipping application
+# ============================================================
+
+unzip -o "$ZIP_FILE" -d "$APP_DIR" &>> "$LOGFILE"
+VALIDATE $? "Extracting Shipping application"
+
+# ============================================================
+# 8. Build Shipping application
+# ============================================================
+
+cd "$APP_DIR"
+
+mvn clean package &>> "$LOGFILE"
+VALIDATE $? "Building Shipping application"
+
+# ============================================================
+# 9. Create shipping.jar
+# ============================================================
+
+if [ -f "$APP_DIR/target/shipping-1.0.jar" ]; then
+
+    mv -f \
+        "$APP_DIR/target/shipping-1.0.jar" \
+        "$APP_DIR/shipping.jar" \
+        &>> "$LOGFILE"
+
+    VALIDATE $? "Creating shipping.jar"
+
+else
+
+    echo -e "${R}ERROR :: target/shipping-1.0.jar not found${N}"
+    exit 1
+
+fi
+
+# ============================================================
+# 10. Check remote MySQL connectivity
+# ============================================================
+
+mysql \
+    -h "$MYSQL_HOST" \
+    -u"$MYSQL_ROOT_USER" \
+    -p"$MYSQL_ROOT_PASSWORD" \
+    -e "SELECT VERSION();" \
+    &>> "$LOGFILE"
+
+VALIDATE $? "Checking MySQL connectivity"
+
+# ============================================================
+# 11. Check whether city data already exists
+#
+# IMPORTANT:
+# schema.sql contains DROP TABLE IF EXISTS.
+#
+# Therefore we DO NOT blindly execute schema.sql.
+# If city data already exists, preserve it.
+# ============================================================
+
+CITY_COUNT=0
+
+if mysql \
+    -h "$MYSQL_HOST" \
+    -u"$MYSQL_ROOT_USER" \
+    -p"$MYSQL_ROOT_PASSWORD" \
+    -Nse "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
+    &>> "$LOGFILE"
+then
+
+    CITY_COUNT=$(
+        mysql \
+            -h "$MYSQL_HOST" \
+            -u"$MYSQL_ROOT_USER" \
+            -p"$MYSQL_ROOT_PASSWORD" \
+            -Nse "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
+            2>> "$LOGFILE"
+    )
+
+fi
+
+echo "Existing city count: ${CITY_COUNT}" | tee -a "$LOGFILE"
+
+# ============================================================
+# 12. Initialize database only when city data is absent
+# ============================================================
+
+if [ "$CITY_COUNT" -gt 0 ]; then
+
+    echo -e "City data already exists ${G}SKIPPING database initialization${N}"
+
+else
+
+    echo -e "${Y}City data not found. Initializing database...${N}"
+
+    # --------------------------------------------------------
+    # Create schema
+    # --------------------------------------------------------
+
+    mysql \
+        -h "$MYSQL_HOST" \
+        -u"$MYSQL_ROOT_USER" \
+        -p"$MYSQL_ROOT_PASSWORD" \
+        < "$APP_DIR/db/schema.sql" \
+        &>> "$LOGFILE"
+
+    VALIDATE $? "Loading Shipping database schema"
+
+    # --------------------------------------------------------
+    # Load master data
+    # --------------------------------------------------------
+
+    mysql \
+        -h "$MYSQL_HOST" \
+        -u"$MYSQL_ROOT_USER" \
+        -p"$MYSQL_ROOT_PASSWORD" \
+        < "$APP_DIR/db/master-data.sql" \
+        &>> "$LOGFILE"
+
+    VALIDATE $? "Loading Shipping city master data"
+
+fi
+
+# ============================================================
+# 13. Create Shipping application user
+#
+# DO NOT use app-user.sql because it explicitly requests:
+#
+# mysql_native_password
+#
+# Your MySQL 9.7 server uses caching_sha2_password.
+# ============================================================
+
+mysql \
+    -h "$MYSQL_HOST" \
+    -u"$MYSQL_ROOT_USER" \
+    -p"$MYSQL_ROOT_PASSWORD" \
+    -e "
+CREATE USER IF NOT EXISTS '${MYSQL_APP_USER}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
+
+ALTER USER '${MYSQL_APP_USER}'@'%'
+IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
+
+GRANT ALL ON ${MYSQL_DATABASE}.* TO '${MYSQL_APP_USER}'@'%';
+
+FLUSH PRIVILEGES;
+" \
+    &>> "$LOGFILE"
+
+VALIDATE $? "Creating Shipping database user"
+
+# ============================================================
+# 14. Verify Shipping database user
+# ============================================================
+
+DB_USER_PLUGIN=$(
+    mysql \
+        -h "$MYSQL_HOST" \
+        -u"$MYSQL_ROOT_USER" \
+        -p"$MYSQL_ROOT_PASSWORD" \
+        -Nse "
+SELECT plugin
+FROM mysql.user
+WHERE user='${MYSQL_APP_USER}'
+AND host='%';
+" \
+        2>> "$LOGFILE"
+)
+
+echo "Shipping authentication plugin: ${DB_USER_PLUGIN}" \
+    | tee -a "$LOGFILE"
+
+if [ "$DB_USER_PLUGIN" !=]()
