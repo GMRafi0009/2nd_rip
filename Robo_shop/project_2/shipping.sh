@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 # ============================================================
 # RoboShop - Shipping Service Installation
-# LAB ENVIRONMENT ONLY
+# LAB ENVIRONMENT
 # ============================================================
 
 ID=$(id -u)
@@ -18,9 +18,9 @@ SCRIPT_NAME=$(basename "$0")
 TIMESTAMP=$(date +%F-%H-%M-%S)
 LOGFILE="/tmp/${SCRIPT_NAME}-${TIMESTAMP}.log"
 
-# ------------------------------------------------------------
-# Application configuration
-# ------------------------------------------------------------
+# ============================================================
+# Application Configuration
+# ============================================================
 
 APP_DIR="/app"
 ZIP_FILE="/tmp/shipping.zip"
@@ -31,24 +31,23 @@ SERVICE_FILE="/etc/systemd/system/shipping.service"
 
 CART_ENDPOINT="cart.3gb.online:8080"
 
-# ------------------------------------------------------------
-# MySQL configuration
-# LAB ONLY
-# ------------------------------------------------------------
+# ============================================================
+# MySQL Configuration
+# ============================================================
 
 MYSQL_HOST="mysql.3gb.online"
 
 MYSQL_ROOT_USER="root"
-MYSQL_ROOT_PASSWORD="RoboShop@1"
+MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set}"
 
 MYSQL_APP_USER="shipping"
-MYSQL_APP_PASSWORD="RoboShop@1"
+MYSQL_APP_PASSWORD="${MYSQL_APP_PASSWORD:?MYSQL_APP_PASSWORD must be set}"
 
 MYSQL_DATABASE="cities"
 
-# ------------------------------------------------------------
+# ============================================================
 # Logging
-# ------------------------------------------------------------
+# ============================================================
 
 echo "Script started at ${TIMESTAMP}" &>> "$LOGFILE"
 
@@ -57,16 +56,23 @@ log() {
 }
 
 VALIDATE() {
+
     if [ "$1" -ne 0 ]; then
+
         echo -e "$2 ... ${R}FAILED${N}"
         echo "Check log file: $LOGFILE"
+
         exit 1
+
     else
+
         echo -e "$2 ... ${G}SUCCESS${N}"
+
     fi
 }
 
 on_error() {
+
     local exit_code=$?
     local line_number=$1
 
@@ -82,12 +88,13 @@ on_error() {
 trap 'on_error $LINENO' ERR
 
 # ============================================================
-# 1. Root validation
+# 1. Root Validation
 # ============================================================
 
 if [ "$ID" -ne 0 ]; then
 
     echo -e "${R}ERROR :: Please run this script with root access${N}"
+
     exit 1
 
 fi
@@ -95,7 +102,7 @@ fi
 echo -e "You are ${G}root user${N}"
 
 # ============================================================
-# 2. Install required packages
+# 2. Install Required Packages
 # ============================================================
 
 dnf install maven -y &>> "$LOGFILE"
@@ -104,8 +111,11 @@ VALIDATE $? "Installing Maven"
 dnf install mysql -y &>> "$LOGFILE"
 VALIDATE $? "Installing MySQL client"
 
+dnf install unzip -y &>> "$LOGFILE"
+VALIDATE $? "Installing unzip"
+
 # ============================================================
-# 3. Validate required commands
+# 3. Validate Required Commands
 # ============================================================
 
 command -v java &>> "$LOGFILE"
@@ -123,13 +133,17 @@ VALIDATE $? "Checking curl"
 command -v unzip &>> "$LOGFILE"
 VALIDATE $? "Checking unzip"
 
+command -v systemctl &>> "$LOGFILE"
+VALIDATE $? "Checking systemctl"
+
 # ============================================================
-# 4. Create roboshop user
+# 4. Create roboshop User
 # ============================================================
 
 if id roboshop &>> "$LOGFILE"; then
 
-    echo -e "roboshop user already exists ${Y}SKIPPING${N}"
+    echo -e \
+        "roboshop user already exists ... ${Y}SKIPPING${N}"
 
 else
 
@@ -139,14 +153,15 @@ else
 fi
 
 # ============================================================
-# 5. Create application directory
+# 5. Create Application Directory
 # ============================================================
 
 mkdir -p "$APP_DIR"
+
 VALIDATE $? "Creating application directory"
 
 # ============================================================
-# 6. Download Shipping application
+# 6. Download Shipping Application
 # ============================================================
 
 curl -fL \
@@ -157,19 +172,24 @@ curl -fL \
 VALIDATE $? "Downloading Shipping application"
 
 # ============================================================
-# 7. Extract Shipping application
+# 7. Extract Shipping Application
 # ============================================================
 
-unzip -o "$ZIP_FILE" -d "$APP_DIR" &>> "$LOGFILE"
+unzip -o \
+    "$ZIP_FILE" \
+    -d "$APP_DIR" \
+    &>> "$LOGFILE"
+
 VALIDATE $? "Extracting Shipping application"
 
 # ============================================================
-# 8. Build Shipping application
+# 8. Build Shipping Application
 # ============================================================
 
 cd "$APP_DIR"
 
 mvn clean package &>> "$LOGFILE"
+
 VALIDATE $? "Building Shipping application"
 
 # ============================================================
@@ -187,13 +207,15 @@ if [ -f "$APP_DIR/target/shipping-1.0.jar" ]; then
 
 else
 
-    echo -e "${R}ERROR :: target/shipping-1.0.jar not found${N}"
+    echo -e \
+        "${R}ERROR :: target/shipping-1.0.jar not found${N}"
+
     exit 1
 
 fi
 
 # ============================================================
-# 10. Check remote MySQL connectivity
+# 10. Check Remote MySQL Connectivity
 # ============================================================
 
 mysql \
@@ -206,13 +228,13 @@ mysql \
 VALIDATE $? "Checking MySQL connectivity"
 
 # ============================================================
-# 11. Check whether city data already exists
+# 11. Check Existing City Data
 #
-# IMPORTANT:
-# schema.sql contains DROP TABLE IF EXISTS.
+# schema.sql contains:
 #
-# Therefore we DO NOT blindly execute schema.sql.
-# If city data already exists, preserve it.
+# DROP TABLE IF EXISTS cities;
+#
+# Therefore we must NOT blindly execute schema.sql.
 # ============================================================
 
 CITY_COUNT=0
@@ -221,7 +243,8 @@ if mysql \
     -h "$MYSQL_HOST" \
     -u"$MYSQL_ROOT_USER" \
     -p"$MYSQL_ROOT_PASSWORD" \
-    -Nse "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
+    -Nse \
+    "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
     &>> "$LOGFILE"
 then
 
@@ -230,28 +253,45 @@ then
             -h "$MYSQL_HOST" \
             -u"$MYSQL_ROOT_USER" \
             -p"$MYSQL_ROOT_PASSWORD" \
-            -Nse "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
+            -Nse \
+            "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
             2>> "$LOGFILE"
     )
 
 fi
 
-echo "Existing city count: ${CITY_COUNT}" | tee -a "$LOGFILE"
+echo "Existing city count: ${CITY_COUNT}" \
+    | tee -a "$LOGFILE"
 
 # ============================================================
-# 12. Initialize database only when city data is absent
+# 12. Initialize Database
 # ============================================================
 
 if [ "$CITY_COUNT" -gt 0 ]; then
 
-    echo -e "City data already exists ${G}SKIPPING database initialization${N}"
+    echo -e \
+        "City data already exists ... ${G}SKIPPING database initialization${N}"
 
 else
 
-    echo -e "${Y}City data not found. Initializing database...${N}"
+    echo -e \
+        "${Y}City data not found. Initializing database...${N}"
 
     # --------------------------------------------------------
-    # Create schema
+    # Verify schema file
+    # --------------------------------------------------------
+
+    if [ ! -f "$APP_DIR/db/schema.sql" ]; then
+
+        echo -e \
+            "${R}ERROR :: $APP_DIR/db/schema.sql not found${N}"
+
+        exit 1
+
+    fi
+
+    # --------------------------------------------------------
+    # Load schema
     # --------------------------------------------------------
 
     mysql \
@@ -264,13 +304,27 @@ else
     VALIDATE $? "Loading Shipping database schema"
 
     # --------------------------------------------------------
-    # Load master data
+    # Verify master-data file
+    # --------------------------------------------------------
+
+    if [ ! -f "$APP_DIR/db/master-data.sql" ]; then
+
+        echo -e \
+            "${R}ERROR :: $APP_DIR/db/master-data.sql not found${N}"
+
+        exit 1
+
+    fi
+
+    # --------------------------------------------------------
+    # Load city master data
     # --------------------------------------------------------
 
     mysql \
         -h "$MYSQL_HOST" \
         -u"$MYSQL_ROOT_USER" \
         -p"$MYSQL_ROOT_PASSWORD" \
+        "$MYSQL_DATABASE" \
         < "$APP_DIR/db/master-data.sql" \
         &>> "$LOGFILE"
 
@@ -279,13 +333,41 @@ else
 fi
 
 # ============================================================
-# 13. Create Shipping application user
+# 13. Verify City Data
+# ============================================================
+
+CITY_COUNT=$(
+    mysql \
+        -h "$MYSQL_HOST" \
+        -u"$MYSQL_ROOT_USER" \
+        -p"$MYSQL_ROOT_PASSWORD" \
+        -Nse \
+        "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
+        2>> "$LOGFILE"
+)
+
+echo "City count after database initialization: ${CITY_COUNT}" \
+    | tee -a "$LOGFILE"
+
+if [ "$CITY_COUNT" -eq 0 ]; then
+
+    echo -e \
+        "${R}ERROR :: Shipping city data is empty${N}"
+
+    exit 1
+
+fi
+
+echo -e \
+    "Shipping city data validation ... ${G}SUCCESS${N}"
+
+# ============================================================
+# 14. Create Shipping Application User
 #
-# DO NOT use app-user.sql because it explicitly requests:
+# DO NOT use app-user.sql.
 #
-# mysql_native_password
-#
-# Your MySQL 9.7 server uses caching_sha2_password.
+# It contains mysql_native_password, which is not available
+# in the current MySQL 9.7 setup.
 # ============================================================
 
 mysql \
@@ -293,12 +375,15 @@ mysql \
     -u"$MYSQL_ROOT_USER" \
     -p"$MYSQL_ROOT_PASSWORD" \
     -e "
-CREATE USER IF NOT EXISTS '${MYSQL_APP_USER}'@'%' IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
+CREATE USER IF NOT EXISTS '${MYSQL_APP_USER}'@'%'
+IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
 
 ALTER USER '${MYSQL_APP_USER}'@'%'
 IDENTIFIED BY '${MYSQL_APP_PASSWORD}';
 
-GRANT ALL ON ${MYSQL_DATABASE}.* TO '${MYSQL_APP_USER}'@'%';
+GRANT ALL PRIVILEGES
+ON ${MYSQL_DATABASE}.*
+TO '${MYSQL_APP_USER}'@'%';
 
 FLUSH PRIVILEGES;
 " \
@@ -307,7 +392,7 @@ FLUSH PRIVILEGES;
 VALIDATE $? "Creating Shipping database user"
 
 # ============================================================
-# 14. Verify Shipping database user
+# 15. Verify Shipping Authentication Plugin
 # ============================================================
 
 DB_USER_PLUGIN=$(
@@ -327,4 +412,166 @@ AND host='%';
 echo "Shipping authentication plugin: ${DB_USER_PLUGIN}" \
     | tee -a "$LOGFILE"
 
-if [ "$DB_USER_PLUGIN" !=]()
+if [ -z "$DB_USER_PLUGIN" ]; then
+
+    echo -e \
+        "${R}ERROR :: Shipping database user was not found${N}"
+
+    exit 1
+
+fi
+
+echo -e \
+    "Shipping authentication plugin validation ... ${G}SUCCESS${N}"
+
+# ============================================================
+# 16. Test Shipping Database User
+# ============================================================
+
+mysql \
+    -h "$MYSQL_HOST" \
+    -u"$MYSQL_APP_USER" \
+    -p"$MYSQL_APP_PASSWORD" \
+    -e "SELECT COUNT(*) FROM ${MYSQL_DATABASE}.cities;" \
+    &>> "$LOGFILE"
+
+VALIDATE $? "Testing Shipping database user"
+
+# ============================================================
+# 17. Set Application Ownership
+# ============================================================
+
+chown -R roboshop:roboshop "$APP_DIR"
+
+VALIDATE $? "Setting application ownership"
+
+# ============================================================
+# 18. Create Systemd Service
+# ============================================================
+
+cat > "$SERVICE_FILE" <<EOF
+[Unit]
+Description=Shipping Service
+After=network.target
+
+[Service]
+User=roboshop
+WorkingDirectory=/app
+
+Environment="CART_ENDPOINT=${CART_ENDPOINT}"
+Environment="DB_HOST=${MYSQL_HOST}"
+
+Environment="SPRING_DATASOURCE_URL=jdbc:mysql://${MYSQL_HOST}:3306/${MYSQL_DATABASE}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+Environment="SPRING_DATASOURCE_USERNAME=${MYSQL_APP_USER}"
+Environment="SPRING_DATASOURCE_PASSWORD=${MYSQL_APP_PASSWORD}"
+
+ExecStart=/bin/java -jar /app/shipping.jar
+
+SyslogIdentifier=shipping
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+VALIDATE $? "Creating Shipping systemd service"
+
+# ============================================================
+# 19. Reload Systemd
+# ============================================================
+
+systemctl daemon-reload &>> "$LOGFILE"
+
+VALIDATE $? "Reloading systemd"
+
+# ============================================================
+# 20. Enable Shipping Service
+# ============================================================
+
+systemctl enable "$SERVICE_NAME" &>> "$LOGFILE"
+
+VALIDATE $? "Enabling Shipping service"
+
+# ============================================================
+# 21. Start / Restart Shipping Service
+# ============================================================
+
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+
+    systemctl restart "$SERVICE_NAME" &>> "$LOGFILE"
+
+    VALIDATE $? "Restarting Shipping service"
+
+else
+
+    systemctl start "$SERVICE_NAME" &>> "$LOGFILE"
+
+    VALIDATE $? "Starting Shipping service"
+
+fi
+
+# ============================================================
+# 22. Wait for Application
+# ============================================================
+
+sleep 5
+
+# ============================================================
+# 23. Verify Shipping Service
+# ============================================================
+
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+
+    echo -e \
+        "Shipping service ... ${G}RUNNING${N}"
+
+else
+
+    echo -e \
+        "${R}ERROR :: Shipping service is not running${N}"
+
+    systemctl status "$SERVICE_NAME" --no-pager
+
+    exit 1
+
+fi
+
+# ============================================================
+# 24. Verify Port 8080
+# ============================================================
+
+if ss -lntp | grep -q ':8080'; then
+
+    echo -e \
+        "Shipping port 8080 ... ${G}LISTENING${N}"
+
+else
+
+    echo -e \
+        "${R}ERROR :: Shipping port 8080 is not listening${N}"
+
+    systemctl status "$SERVICE_NAME" --no-pager
+
+    exit 1
+
+fi
+
+# ============================================================
+# 25. Final Status
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Shipping Installation Completed Successfully"
+echo "============================================================"
+echo "Application : $APP_DIR/shipping.jar"
+echo "Database    : $MYSQL_DATABASE"
+echo "DB Host     : $MYSQL_HOST"
+echo "City Count  : $CITY_COUNT"
+echo "Service     : $SERVICE_NAME"
+echo "Port        : 8080"
+echo "Log File    : $LOGFILE"
+echo "============================================================"
+
+systemctl status "$SERVICE_NAME" --no-pager
