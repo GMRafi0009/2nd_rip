@@ -1,91 +1,131 @@
 #!/bin/bash
 
 ID=$(id -u)
+
 R="\e[31m"
 G="\e[32m"
 Y="\e[33m"
 N="\e[0m"
 
 TIMESTAMP=$(date +%F-%H-%M-%S)
-LOGFILE="/tmp/$0-$TIMESTAMP.log"
+SCRIPT_NAME=$(basename "$0")
+LOGFILE="/tmp/${SCRIPT_NAME}-${TIMESTAMP}.log"
 
-echo "script stareted executing at $TIMESTAMP" &>> $LOGFILE
+echo "Script started executing at $TIMESTAMP" &>> "$LOGFILE"
 
-VALIDATE(){
-	if [ $1 -ne 0 ]
-	then
-		echo -e "$2 ... $R FAILED $N"
-		exit 1
-	else
-		echo -e "$2 ... $G SUCCESS $N"
-	fi
+VALIDATE() {
+    if [ "$1" -ne 0 ]
+    then
+        echo -e "$2 ... $R FAILED $N"
+        exit 1
+    else
+        echo -e "$2 ... $G SUCCESS $N"
+    fi
 }
-if [ $ID -ne 0 ]
+
+# Root validation
+if [ "$ID" -ne 0 ]
 then
-	echo -e "$R ERROR :: Please run.this script with root access $N"
-	exit 1.# you.can give other.than 0
+    echo -e "$R ERROR :: Please run this script with root access $N"
+    exit 1
 else
-	echo "You are root user"
-fi # fi means reverse of if, indicating condition end
+    echo "You are root user"
+fi
 
-dnf install maven -y
+# Install Maven
+dnf install maven -y &>> "$LOGFILE"
+VALIDATE $? "installing Maven"
 
-id roboshop #if roboshop user does not exist, then it is failure
+# Create roboshop user if not exists
+id roboshop &>> "$LOGFILE"
+
 if [ $? -ne 0 ]
 then
-	useradd roboshop
-	VALIDATE $? "roboshop user creation"
+    useradd roboshop &>> "$LOGFILE"
+    VALIDATE $? "roboshop user creation"
 else
-echo -e "roboshop user already exist $Y SKIPPING $N"
+    echo -e "roboshop user already exists ... $Y SKIPPING $N"
+fi
 
-fi 
-
+# Create application directory
 mkdir -p /app
-
 VALIDATE $? "creating app directory"
 
-curl -L -o /tmp/shipping.zip https://roboshop-builds.s3.amazonaws.com/shipping.zip &>> $LOGFILE
+# Download Shipping application
+curl -L -o /tmp/shipping.zip \
+    https://roboshop-builds.s3.amazonaws.com/shipping.zip \
+    &>> "$LOGFILE"
 
-VALIDATE $? "downloding application zip files"
+VALIDATE $? "downloading Shipping application"
 
+# Extract application
 cd /app
 
-unzip -o /tmp/shipping.zip &>> $LOGFILE
+unzip -o /tmp/shipping.zip &>> "$LOGFILE"
+VALIDATE $? "unzipping Shipping application"
 
-VALIDATE $? "unziping the application files"
+# Build application
+mvn clean package &>> "$LOGFILE"
+VALIDATE $? "building Shipping application"
 
-mvn clean package &>> $LOGFILE
+# Rename application JAR
+mv target/shipping-1.0.jar shipping.jar &>> "$LOGFILE"
+VALIDATE $? "renaming Shipping JAR"
 
-VALIDATE $? "installing application dependences"
+# Copy systemd service
+cp /home/ec2-user/2nd_rip/Robo_shop/Project/shipping.service \
+    /etc/systemd/system/shipping.service \
+    &>> "$LOGFILE"
 
-mv target/shipping-1.0.jar shipping.jar &>> $LOGFILE
+VALIDATE $? "copying Shipping service file"
 
-VALIDATE $? "renaming the jar files"
+# Reload systemd
+systemctl daemon-reload &>> "$LOGFILE"
+VALIDATE $? "doing systemd daemon-reload"
 
-cp /home/ec2-user/2nd_rip/Robo_shop/Project/shipping.service /etc/systemd/system/shipping.service &>> $LOGFILE
+# Install MySQL client
+dnf install mysql -y &>> "$LOGFILE"
+VALIDATE $? "installing MySQL client"
 
-VALIDATE $? "copying application files"
+# Load cities database schema
+mysql -h mysql.3gb.online \
+    -uroot \
+    -p'RoboShop@1' \
+    < /app/db/schema.sql \
+    &>> "$LOGFILE"
 
-systemctl daemon-reload &>> $LOGFILE
+VALIDATE $? "loading cities database schema"
 
-VALIDATE $? "doing daemon-reload"
+# Load cities master data
+mysql -h mysql.3gb.online \
+    -uroot \
+    -p'RoboShop@1' \
+    < /app/db/master-data.sql \
+    &>> "$LOGFILE"
 
-systemctl enable shipping &>> $LOGFILE
+VALIDATE $? "loading cities master data"
 
-VALIDATE $? "enabling shipping"
+# Verify cities data
+CITY_COUNT=$(mysql -h mysql.3gb.online \
+    -uroot \
+    -p'RoboShop@1' \
+    -Nse "SELECT COUNT(*) FROM cities.cities;" \
+    2>> "$LOGFILE")
 
-systemctl start shipping &>> $LOGFILE
+if [ "$CITY_COUNT" -le 0 ]
+then
+    echo -e "$R ERROR :: Cities master data was not loaded $N"
+    exit 1
+else
+    echo -e "$G Cities master data loaded successfully: $CITY_COUNT rows $N"
+fi
 
-VALIDATE $? "starting shipping"
+# Enable Shipping
+systemctl enable shipping &>> "$LOGFILE"
+VALIDATE $? "enabling Shipping"
 
-dnf install mysql -y &>> $LOGFILE
+# Start Shipping
+systemctl start shipping &>> "$LOGFILE"
+VALIDATE $? "starting Shipping"
 
-VALIDATE $? "installing mysql client"
-
-mysql -h mysql.3gb.online -uroot -pRoboShop@1 < /app/db/schema.sql &>> $LOGFILE
-
-VALIDATE $? "loading shipping data"
-
-systemctl restart shipping &>> $LOGFILE
-
-VALIDATE $? "restart shipping"
+echo -e "$G Shipping setup completed successfully $N"
